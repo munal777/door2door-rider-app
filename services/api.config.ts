@@ -56,6 +56,7 @@ export const API_CONFIG = {
     RIDER_PROFILE: '/riders/app/profile/',
     RIDER_AVAILABILITY: '/riders/app/availability/',
     RIDER_ASSIGNED_ORDERS: '/riders/app/orders/',
+    RIDER_ORDER_HISTORY: '/riders/app/orders/history/',
     RIDER_ASSIGNED_ORDER_DETAIL: (orderNumber: string) =>
       `/riders/app/orders/${orderNumber}/`,
     RIDER_ASSIGNED_ORDER_STATUS: (orderNumber: string) =>
