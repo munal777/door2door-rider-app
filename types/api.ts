@@ -115,6 +115,8 @@ export interface RiderAssignedOrderSummary {
   package_type: string;
   notes?: string;
   assigned_at: string;
+  /** Populated for history (inactive) assignments only */
+  unassigned_at?: string | null;
 }
 
 export interface RiderOrderTrackingItem {
@@ -149,7 +151,7 @@ export interface RiderAssignedOrderDetail extends RiderAssignedOrderSummary {
 }
 
 export interface RiderOrderStatusUpdateRequest {
-  status: 'picked_up' | 'in_transit' | 'out_for_delivery' | 'delivered';
+  status: 'heading_to_pickup' | 'picked_up' | 'out_for_delivery' | 'delivered' | 'returned';
   remarks?: string;
   location_city?: string;
 }

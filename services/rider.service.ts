@@ -145,6 +145,10 @@ export const riderService = {
     return apiClient.get<RiderAssignedOrderSummary[]>(API_CONFIG.ENDPOINTS.RIDER_ASSIGNED_ORDERS);
   },
 
+  async getOrderHistory(): Promise<ApiResponse<RiderAssignedOrderSummary[]>> {
+    return apiClient.get<RiderAssignedOrderSummary[]>(API_CONFIG.ENDPOINTS.RIDER_ORDER_HISTORY);
+  },
+
   async getAssignedOrderDetail(orderNumber: string): Promise<ApiResponse<RiderAssignedOrderDetail>> {
     return apiClient.get<RiderAssignedOrderDetail>(
       API_CONFIG.ENDPOINTS.RIDER_ASSIGNED_ORDER_DETAIL(orderNumber)
