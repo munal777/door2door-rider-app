@@ -19,20 +19,21 @@ const PHYSICAL_DEVICE_URL = `http://${PHYSICAL_DEVICE_IP}:8000/api`; // Physical
 //   - 'bare'         → bare React Native / Expo dev build
 //   - 'standalone'   → production standalone build
 const getBaseUrl = () => {
-    const env = Constants.executionEnvironment;
+  const env = Constants.executionEnvironment;
+  const isDevice = "isDevice" in Constants ? Boolean(Constants.isDevice) : true;
 
-    // Running in Expo Go on a real phone → need the machine's LAN IP
-    if (env === ExecutionEnvironment.StoreClient) {
-        return PHYSICAL_DEVICE_URL;
-    }
+  // Running on a real device → need the machine's LAN IP
+  if (env === ExecutionEnvironment.StoreClient) {
+    return PHYSICAL_DEVICE_URL;
+  }
 
-    // Dev build or bare RN on a real Android device also can't use localhost
-    if (env === ExecutionEnvironment.Bare && Platform.OS === 'android') {
-        return PHYSICAL_DEVICE_URL;
-    }
+  // Dev build / bare RN on a real device also can't use localhost
+  if (env === ExecutionEnvironment.Bare && isDevice) {
+    return PHYSICAL_DEVICE_URL;
+  }
 
-    // Emulator / Simulator
-    return Platform.OS === 'android' ? ANDROID_EMULATOR_URL : LOCAL_API_URL;
+  // Emulator / Simulator
+  return Platform.OS === 'android' ? ANDROID_EMULATOR_URL : LOCAL_API_URL;
 };
 
 export const API_CONFIG = {
@@ -63,5 +64,7 @@ export const API_CONFIG = {
       `/riders/app/orders/${orderNumber}/status/`,
     RIDER_ASSIGNED_ORDER_LOCATION_HTTP: (orderNumber: string) =>
       `/riders/app/orders/${orderNumber}/location/`,
+    RIDER_POD_UPLOAD: (orderNumber: string) =>
+      `/riders/app/orders/${orderNumber}/pod/`,
   },
 };

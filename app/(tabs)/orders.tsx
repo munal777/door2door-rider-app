@@ -22,22 +22,30 @@ import {
 
 import { EmptyState } from "@/components/ui/EmptyState";
 import { StatusBadge } from "@/components/ui/StatusBadge";
-import { BorderRadius, Colors, FontSizes, Shadows, Spacing } from "@/constants/theme";
+import {
+  BorderRadius,
+  Colors,
+  FontSizes,
+  Shadows,
+  Spacing,
+} from "@/constants/theme";
 import { riderService } from "@/services/rider.service";
 import { RiderAssignedOrderSummary } from "@/types/api";
+import { usePolling } from "@/hooks/usePolling";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 type Tab = "active" | "history";
 
 const STATUS_LABELS: Record<string, string> = {
-  pickup_assigned:   "Pickup Assigned",
+  pickup_assigned: "Pickup Assigned",
   heading_to_pickup: "Heading to Pickup",
-  picked_up:         "Picked Up",
-  in_transit:        "In Transit",
-  out_for_delivery:  "Out for Delivery",
-  delivered:         "Delivered",
-  returned:          "Returned",
+  picked_up: "Picked Up",
+  in_transit: "In Transit",
+  delivery_assigned: "Delivery Assigned",
+  out_for_delivery: "Out for Delivery",
+  delivered: "Delivered",
+  returned: "Returned",
 };
 
 function getPackageIcon(packageType: string) {
@@ -52,9 +60,13 @@ function getPackageIcon(packageType: string) {
 function getHistoryPackageIcon(packageType: string) {
   switch (packageType) {
     case "document":
-      return <FileText size={22} color={Colors.mutedForeground} strokeWidth={2} />;
+      return (
+        <FileText size={22} color={Colors.mutedForeground} strokeWidth={2} />
+      );
     default:
-      return <Package size={22} color={Colors.mutedForeground} strokeWidth={2} />;
+      return (
+        <Package size={22} color={Colors.mutedForeground} strokeWidth={2} />
+      );
   }
 }
 
@@ -118,7 +130,9 @@ function TabBar({
           <View
             style={[
               tabStyles.badge,
-              active === "active" ? tabStyles.badgeSelected : tabStyles.badgeMuted,
+              active === "active"
+                ? tabStyles.badgeSelected
+                : tabStyles.badgeMuted,
             ]}
           >
             <Text
@@ -230,9 +244,10 @@ function OrderCard({
   isHistory: boolean;
   onPress: () => void;
 }) {
-  const timeLabel = isHistory && order.unassigned_at
-    ? `Completed ${formatTime(order.unassigned_at)}`
-    : formatTime(order.assigned_at);
+  const timeLabel =
+    isHistory && order.unassigned_at
+      ? `Completed ${formatTime(order.unassigned_at)}`
+      : formatTime(order.assigned_at);
 
   return (
     <TouchableOpacity
@@ -241,15 +256,24 @@ function OrderCard({
       activeOpacity={0.75}
     >
       {/* Left: package type icon */}
-      <View style={[styles.cardIconWrap, isHistory && styles.cardIconWrapHistory]}>
-        {isHistory ? getHistoryPackageIcon(order.package_type) : getPackageIcon(order.package_type)}
+      <View
+        style={[styles.cardIconWrap, isHistory && styles.cardIconWrapHistory]}
+      >
+        {isHistory
+          ? getHistoryPackageIcon(order.package_type)
+          : getPackageIcon(order.package_type)}
       </View>
 
       {/* Center: order info */}
       <View style={styles.cardBody}>
         {/* Top row: order number + status */}
         <View style={styles.cardTopRow}>
-          <Text style={[styles.cardOrderNumber, isHistory && styles.cardOrderNumberHistory]}>
+          <Text
+            style={[
+              styles.cardOrderNumber,
+              isHistory && styles.cardOrderNumberHistory,
+            ]}
+          >
             {order.order_number}
           </Text>
           <StatusBadge
@@ -266,7 +290,13 @@ function OrderCard({
             color={isHistory ? Colors.mutedForeground : Colors.primary}
             strokeWidth={2.5}
           />
-          <Text style={[styles.cardMetaText, isHistory && styles.cardMetaTextHistory]} numberOfLines={1}>
+          <Text
+            style={[
+              styles.cardMetaText,
+              isHistory && styles.cardMetaTextHistory,
+            ]}
+            numberOfLines={1}
+          >
             {order.sender_name} · {order.sender_city}
           </Text>
         </View>
@@ -290,8 +320,12 @@ export default function OrdersTab() {
   const router = useRouter();
 
   const [activeTab, setActiveTab] = useState<Tab>("active");
-  const [activeOrders, setActiveOrders] = useState<RiderAssignedOrderSummary[]>([]);
-  const [historyOrders, setHistoryOrders] = useState<RiderAssignedOrderSummary[]>([]);
+  const [activeOrders, setActiveOrders] = useState<RiderAssignedOrderSummary[]>(
+    [],
+  );
+  const [historyOrders, setHistoryOrders] = useState<
+    RiderAssignedOrderSummary[]
+  >([]);
   const [isLoadingActive, setIsLoadingActive] = useState(true);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -354,6 +388,14 @@ export default function OrdersTab() {
     setRefreshing(false);
   };
 
+  // ── Auto-polling ──────────────────────────────────────────────────────────
+  // Active orders poll every 15 s; history every 30 s (less time-sensitive).
+  usePolling(loadActiveOrders, 15_000);
+  usePolling(
+    activeTab === "history" ? loadHistoryOrders : () => {},
+    30_000
+  );
+
   const openOrder = (orderNumber: string) => {
     router.push(`/order/${orderNumber}` as any);
   };
@@ -401,7 +443,7 @@ export default function OrdersTab() {
             orders.length === 0 && styles.listContentEmpty,
           ]}
           data={orders}
-          keyExtractor={(item) => item.order_number}
+          keyExtractor={(item) => String(item.id)}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}

@@ -148,6 +148,8 @@ export interface RiderAssignedOrderDetail extends RiderAssignedOrderSummary {
   weight: string;
   last_location_update_at?: string | null;
   tracking_history: RiderOrderTrackingItem[];
+  /** POD record — present only after rider uploads delivery proof */
+  proof_of_delivery?: ProofOfDelivery | null;
 }
 
 export interface RiderOrderStatusUpdateRequest {
@@ -162,4 +164,20 @@ export interface RiderLocationUpdatePayload {
   accuracy_meters?: number;
   speed_kmh?: number;
   heading_degrees?: number;
+}
+
+// ─── Proof of Delivery ──────────────────────────────────────────────────────────
+
+export interface ProofOfDelivery {
+  id: number;
+  image_url: string;
+  notes?: string;
+  uploaded_at: string;
+}
+
+export interface PodUploadResponse {
+  id: number;
+  image_url: string;
+  notes?: string;
+  uploaded_at: string;
 }

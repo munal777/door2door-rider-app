@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -18,6 +18,7 @@ import { SectionHeader } from "@/components/ui/SectionHeader";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Colors, Spacing, BorderRadius, FontSizes } from "@/constants/theme";
 import { RiderProfile } from "@/types/api";
+import { usePolling } from "@/hooks/usePolling";
 
 export default function ProfileTab() {
   const { logout } = useAuth();
@@ -33,7 +34,7 @@ export default function ProfileTab() {
   const [vehicleModel, setVehicleModel] = useState("");
   const [vehicleColor, setVehicleColor] = useState("");
 
-  const loadProfile = async () => {
+  const loadProfile = useCallback(async () => {
     try {
       const response = await riderService.getProfile();
       if (response.IsSuccess && response.Result) {
@@ -49,11 +50,14 @@ export default function ProfileTab() {
       setIsLoading(false);
       setRefreshing(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadProfile();
-  }, []);
+  }, [loadProfile]);
+
+  // Auto-refresh profile every 20 s so availability_status stays current.
+  usePolling(loadProfile, 20_000);
 
   const getStatusText = (status: string) => {
     return status
