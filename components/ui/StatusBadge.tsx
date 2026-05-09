@@ -8,7 +8,12 @@ function getStatusStyle(status: string): { text: string; bg: string } {
   if (value === "delivered" || value === "active" || value === "available") {
     return { text: Colors.success, bg: Colors.successBg };
   }
-  if (value === "suspended" || value === "inactive" || value === "offline") {
+  if (
+    value === "suspended" ||
+    value === "inactive" ||
+    value === "offline" ||
+    value === "returned"
+  ) {
     return { text: Colors.error, bg: Colors.errorBg };
   }
   if (
@@ -20,6 +25,8 @@ function getStatusStyle(status: string): { text: string; bg: string } {
   }
   if (
     value === "pickup_assigned" ||
+    value === "heading_to_pickup" ||
+    value === "delivery_assigned" ||
     value === "pending_documents" ||
     value === "under_review" ||
     value === "picked_up"

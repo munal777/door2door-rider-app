@@ -16,19 +16,20 @@ import {
   RiderAssignedOrderDetail,
   RiderOrderStatusUpdateRequest,
   RiderLocationUpdatePayload,
+  PodUploadResponse,
 } from '@/types/api';
 
 type LatLng = { latitude: number; longitude: number };
 
 export type GoogleDirectionsResponse = {
   status: string;
-  routes?: Array<{
+  routes?: {
     overview_polyline?: { points?: string };
-    legs?: Array<{
+    legs?: {
       distance?: { text?: string };
       duration?: { text?: string };
-    }>;
-  }>;
+    }[];
+  }[];
   error_message?: string;
 };
 
@@ -195,5 +196,91 @@ export const riderService = {
   createOrderLocationSocket(orderNumber: string, token: string): WebSocket {
     const socketUrl = this.buildOrderLocationWebSocketUrl(orderNumber, token);
     return new WebSocket(socketUrl);
+  },
+
+  /**
+   * Upload Proof of Delivery photo for an assigned order.
+   *
+   * Uses native fetch() instead of axios to avoid axios's default
+   * Content-Type: application/json header leaking into FormData requests.
+   * With fetch(), the browser/React Native runtime automatically sets
+   * 'multipart/form-data; boundary=...' when given a FormData body.
+   */
+  async uploadProofOfDelivery(
+    orderNumber: string,
+    imageUri: string,
+    imageName: string = 'pod.jpg',
+    imageType: string = 'image/jpeg',
+    notes: string = ''
+  ): Promise<ApiResponse<PodUploadResponse>> {
+    const formData = new FormData();
+
+    if (Platform.OS === 'web') {
+      try {
+        const fileObject = await blobToFile(imageUri, imageName, imageType);
+        formData.append('image', fileObject);
+      } catch {
+        throw new Error('Failed to process the delivery photo. Please try again.');
+      }
+    } else {
+      // React Native: { uri, name, type } is the correct RN FormData format.
+      // Do NOT use instanceof File here — RN's FormData accepts this plain object.
+      formData.append('image', {
+        uri: imageUri,
+        name: imageName,
+        type: imageType,
+      } as any);
+    }
+
+    if (notes.trim()) {
+      formData.append('notes', notes.trim());
+    }
+
+    // Build the full URL and grab the current auth token from the shared client.
+    const url = `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.RIDER_POD_UPLOAD(orderNumber)}`;
+    const token = apiClient.getAccessToken();
+
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      // Do NOT set Content-Type here — fetch sets it automatically with the
+      // correct multipart boundary when the body is FormData.
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    console.log('[POD Upload] POST', url);
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+    } catch (networkError: any) {
+      console.error('[POD Upload] Network error:', networkError);
+      return {
+        StatusCode: 0,
+        IsSuccess: false,
+        ErrorMessage: [networkError?.message ?? 'Network error. Please check your connection.'],
+        Result: null as any,
+      };
+    }
+
+    let data: ApiResponse<PodUploadResponse>;
+    try {
+      data = await response.json();
+    } catch {
+      return {
+        StatusCode: response.status,
+        IsSuccess: false,
+        ErrorMessage: ['Server returned an unexpected response. Please try again.'],
+        Result: null as any,
+      };
+    }
+
+    console.log('[POD Upload] Response status:', response.status, 'IsSuccess:', data?.IsSuccess);
+    return data;
   },
 };

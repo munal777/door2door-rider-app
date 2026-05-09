@@ -9,6 +9,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Image as RNImage,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
@@ -20,40 +21,64 @@ import {
   Navigation,
   Package,
   Truck,
+  Camera,
 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Button } from "@/components/ui/Button";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
-import { BorderRadius, Colors, FontSizes, Shadows, Spacing } from "@/constants/theme";
+import { ProofOfDeliveryCapture } from "@/components/ui/ProofOfDeliveryCapture";
+import {
+  BorderRadius,
+  Colors,
+  FontSizes,
+  Shadows,
+  Spacing,
+} from "@/constants/theme";
 import { riderService } from "@/services/rider.service";
 import {
   RiderAssignedOrderDetail,
   RiderOrderStatusUpdateRequest,
 } from "@/types/api";
+import { usePolling } from "@/hooks/usePolling";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const STATUS_TRANSITION_MAP: Record<string, RiderOrderStatusUpdateRequest["status"][]> = {
-  pickup_assigned:   ["heading_to_pickup"],
+const STATUS_TRANSITION_MAP: Record<
+  string,
+  RiderOrderStatusUpdateRequest["status"][]
+> = {
+  pickup_assigned: ["heading_to_pickup"],
   heading_to_pickup: ["picked_up"],
   // picked_up: no rider action — parcel goes to courier hub for transit
-  out_for_delivery:  ["delivered", "returned"],
+  delivery_assigned: ["out_for_delivery"],
+  out_for_delivery: ["delivered", "returned"],
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  pickup_assigned:   "Pickup Assigned",
+  pickup_assigned: "Pickup Assigned",
   heading_to_pickup: "Heading to Pickup",
-  picked_up:         "Picked Up",
-  in_transit:        "In Transit",
-  out_for_delivery:  "Out for Delivery",
-  delivered:         "Delivered",
-  returned:          "Returned",
+  picked_up: "Picked Up",
+  in_transit: "In Transit",
+  delivery_assigned: "Delivery Assigned",
+  out_for_delivery: "Out for Delivery",
+  delivered: "Delivered",
+  returned: "Returned",
 };
 
-const DELIVERY_PHASES = ["out_for_delivery", "delivered", "returned"];
+const DELIVERY_PHASES = [
+  "delivery_assigned",
+  "out_for_delivery",
+  "delivered",
+  "returned",
+];
 const TERMINAL_STATUSES = ["delivered", "returned"];
+
+export const options = {
+  headerShown: false,
+  animation: "slide_from_right",
+} as const;
 
 function getStatusText(status: string) {
   return (
@@ -122,6 +147,9 @@ export default function OrderDetailScreen() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [modal, setModal] = useState<ModalState>(HIDDEN_MODAL);
 
+  // POD state
+  const [isPodModalVisible, setIsPodModalVisible] = useState(false);
+
   // ── Helpers ────────────────────────────────────────────────────────────────
 
   const hideModal = () => setModal(HIDDEN_MODAL);
@@ -175,12 +203,28 @@ export default function OrderDetailScreen() {
     return STATUS_TRANSITION_MAP[order.order_status] ?? [];
   }, [order?.order_status]);
 
-  const isDeliveryPhase = order ? DELIVERY_PHASES.includes(order.order_status) : false;
-  const isHistorical = order ? TERMINAL_STATUSES.includes(order.order_status) : false;
+  const isDeliveryPhase = order
+    ? DELIVERY_PHASES.includes(order.order_status)
+    : false;
+  const isHistorical = order
+    ? TERMINAL_STATUSES.includes(order.order_status)
+    : false;
+
+  // ── Auto-polling ───────────────────────────────────────────────────────────
+  // Refresh every 10 s while focused so status & actions update without a
+  // manual pull-to-refresh. Stops once the order is in a terminal state.
+  const pollDetail = useCallback(async () => {
+    if (!orderNumber || isHistorical) return;
+    await loadDetail();
+  }, [orderNumber, isHistorical, loadDetail]);
+
+  usePolling(pollDetail, 10_000);
 
   // ── Status update ──────────────────────────────────────────────────────────
 
-  const confirmAndUpdateStatus = (nextStatus: RiderOrderStatusUpdateRequest["status"]) => {
+  const confirmAndUpdateStatus = (
+    nextStatus: RiderOrderStatusUpdateRequest["status"],
+  ) => {
     if (!order || !orderNumber) return;
 
     const isTerminal = TERMINAL_STATUSES.includes(nextStatus);
@@ -200,7 +244,9 @@ export default function OrderDetailScreen() {
     });
   };
 
-  const executeStatusUpdate = async (nextStatus: RiderOrderStatusUpdateRequest["status"]) => {
+  const executeStatusUpdate = async (
+    nextStatus: RiderOrderStatusUpdateRequest["status"],
+  ) => {
     if (!order || !orderNumber) return;
     const locationCity =
       nextStatus === "delivered" ? order.receiver_city : order.sender_city;
@@ -256,8 +302,12 @@ export default function OrderDetailScreen() {
   const handleNavigate = () => {
     if (!order) return;
 
-    const lat = isDeliveryPhase ? order.receiver_latitude : order.sender_latitude;
-    const lng = isDeliveryPhase ? order.receiver_longitude : order.sender_longitude;
+    const lat = isDeliveryPhase
+      ? order.receiver_latitude
+      : order.sender_latitude;
+    const lng = isDeliveryPhase
+      ? order.receiver_longitude
+      : order.sender_longitude;
 
     if (!lat || !lng) {
       showModal({
@@ -273,7 +323,11 @@ export default function OrderDetailScreen() {
     const latN = Number(lat);
     const lngN = Number(lng);
 
-    if (Number.isNaN(latN) || Number.isNaN(lngN) || (latN === 0 && lngN === 0)) {
+    if (
+      Number.isNaN(latN) ||
+      Number.isNaN(lngN) ||
+      (latN === 0 && lngN === 0)
+    ) {
       showModal({
         title: "Unavailable",
         message: "Valid coordinates are not set for this order.",
@@ -336,7 +390,11 @@ export default function OrderDetailScreen() {
     <View style={styles.root}>
       {/* Custom header */}
       <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerBack} hitSlop={8}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={styles.headerBack}
+          hitSlop={8}
+        >
           <ArrowLeft size={22} color={Colors.text} strokeWidth={2.2} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
@@ -393,10 +451,14 @@ export default function OrderDetailScreen() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.navigateCtaTitle}>
-                {isDeliveryPhase ? "Navigate to Delivery" : "Navigate to Pickup"}
+                {isDeliveryPhase
+                  ? "Navigate to Delivery"
+                  : "Navigate to Pickup"}
               </Text>
               <Text style={styles.navigateCtaSub}>
-                {isDeliveryPhase ? order.receiver_address : order.sender_address}
+                {isDeliveryPhase
+                  ? order.receiver_address
+                  : order.sender_address}
               </Text>
             </View>
           </TouchableOpacity>
@@ -471,14 +533,56 @@ export default function OrderDetailScreen() {
         {!isHistorical && availableTransitions.length > 0 && (
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Actions</Text>
-            {availableTransitions.map((nextStatus) => (
-              <Button
-                key={nextStatus}
-                title={`Mark as ${getStatusText(nextStatus)}`}
-                onPress={() => confirmAndUpdateStatus(nextStatus)}
-                isLoading={isUpdating}
-              />
-            ))}
+            {availableTransitions.map((nextStatus) => {
+              // 'delivered' is handled entirely by the POD capture modal.
+              // Uploading the photo auto-marks the order as delivered.
+              if (nextStatus === "delivered") {
+                return (
+                  <Button
+                    key={nextStatus}
+                    onPress={() => setIsPodModalVisible(true)}
+                    isLoading={isUpdating}
+                  >
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <Camera size={18} color={Colors.primaryForeground} />
+                      <Text style={{ color: Colors.primaryForeground, fontSize: FontSizes.sm, fontWeight: "600" }}>
+                        Capture & Submit Delivery Proof
+                      </Text>
+                    </View>
+                  </Button>
+                );
+              }
+
+              return (
+                <Button
+                  key={nextStatus}
+                  title={`Mark as ${getStatusText(nextStatus)}`}
+                  onPress={() => confirmAndUpdateStatus(nextStatus)}
+                  isLoading={isUpdating}
+                />
+              );
+            })}
+          </View>
+        )}
+
+        {/* ── Proof of Delivery (Shown if exists) ── */}
+        {order.proof_of_delivery && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Proof of Delivery</Text>
+            <RNImage
+              source={{ uri: order.proof_of_delivery.image_url }}
+              style={styles.podThumbnail}
+              resizeMode="cover"
+            />
+            {order.proof_of_delivery.notes ? (
+              <Text style={styles.notesText}>
+                {order.proof_of_delivery.notes}
+              </Text>
+            ) : null}
+            <Text style={styles.timelineTime}>
+              Uploaded at{" "}
+              {new Date(order.proof_of_delivery.uploaded_at).toLocaleString()}
+            </Text>
           </View>
         )}
 
@@ -494,7 +598,10 @@ export default function OrderDetailScreen() {
             order.tracking_history.map((item, idx) => {
               const isFirst = idx === 0;
               return (
-                <View key={`${item.created_at}-${idx}`} style={styles.timelineItem}>
+                <View
+                  key={`${item.created_at}-${idx}`}
+                  style={styles.timelineItem}
+                >
                   <View style={styles.timelineLine}>
                     <View
                       style={[
@@ -510,7 +617,9 @@ export default function OrderDetailScreen() {
                     <View style={styles.timelineHeader}>
                       <CheckCircle
                         size={14}
-                        color={isFirst ? Colors.primary : Colors.mutedForeground}
+                        color={
+                          isFirst ? Colors.primary : Colors.mutedForeground
+                        }
                         strokeWidth={2}
                       />
                       <Text
@@ -527,7 +636,9 @@ export default function OrderDetailScreen() {
                     ) : null}
                     <View style={styles.timelineMeta}>
                       {item.location_city ? (
-                        <Text style={styles.timelineCity}>{item.location_city}</Text>
+                        <Text style={styles.timelineCity}>
+                          {item.location_city}
+                        </Text>
                       ) : null}
                       <Clock size={11} color={Colors.mutedForeground} />
                       <Text style={styles.timelineTime}>
@@ -544,6 +655,21 @@ export default function OrderDetailScreen() {
 
       {/* Custom modal (replaces all Alert.alert calls) */}
       <ConfirmModal {...modal} />
+
+      {/* Proof of Delivery Capture Modal */}
+      {order && (
+        <ProofOfDeliveryCapture
+          orderNumber={order.order_number}
+          receiverCity={order.receiver_city}
+          visible={isPodModalVisible}
+          onDelivered={() => {
+            setIsPodModalVisible(false);
+            // Order is now delivered — go back to the orders list
+            router.back();
+          }}
+          onDismiss={() => setIsPodModalVisible(false)}
+        />
+      )}
     </View>
   );
 }
@@ -803,6 +929,13 @@ const styles = StyleSheet.create({
   timelineTime: {
     fontSize: 11,
     color: Colors.mutedForeground,
+  },
+  podThumbnail: {
+    width: "100%",
+    height: 180,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.muted,
+    marginVertical: Spacing.xs,
   },
 
   // Loading / empty

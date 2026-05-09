@@ -62,17 +62,13 @@ type SocketMessage = {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const ACTIVE_STATUSES = [
-  "pickup_assigned",
-  "picked_up",
-  "in_transit",
-  "out_for_delivery",
-];
+const ACTIVE_STATUSES = ["heading_to_pickup", "out_for_delivery"];
 
 /**
  * After pickup the rider heads to delivery — navigation target switches.
+ * heading_to_pickup remains pre-delivery; out_for_delivery navigates to DELIVERY.
  */
-const DELIVERY_PHASE_STATUSES = ["picked_up", "in_transit", "out_for_delivery"];
+const DELIVERY_PHASE_STATUSES = ["out_for_delivery"];
 
 const AUTO_REFRESH_MS = 30_000;
 const ROUTE_REFETCH_THRESHOLD_M = 150;
@@ -82,16 +78,21 @@ const CARD_BG = "rgba(255,255,255,0.97)";
 
 function decodePolyline(encoded: string): LatLng[] {
   const points: LatLng[] = [];
-  let index = 0, lat = 0, lng = 0;
+  let index = 0,
+    lat = 0,
+    lng = 0;
   while (index < encoded.length) {
-    let shift = 0, result = 0, byte: number;
+    let shift = 0,
+      result = 0,
+      byte: number;
     do {
       byte = encoded.charCodeAt(index++) - 63;
       result |= (byte & 0x1f) << shift;
       shift += 5;
     } while (byte >= 0x20);
     lat += result & 1 ? ~(result >> 1) : result >> 1;
-    shift = 0; result = 0;
+    shift = 0;
+    result = 0;
     do {
       byte = encoded.charCodeAt(index++) - 63;
       result |= (byte & 0x1f) << shift;
@@ -105,7 +106,8 @@ function decodePolyline(encoded: string): LatLng[] {
 
 function parseCoord(lat?: string | null, lng?: string | null): LatLng | null {
   if (!lat || !lng) return null;
-  const la = Number(lat), lo = Number(lng);
+  const la = Number(lat),
+    lo = Number(lng);
   if (Number.isNaN(la) || Number.isNaN(lo)) return null;
   return { latitude: la, longitude: lo };
 }
@@ -116,22 +118,36 @@ function haversineM(a: LatLng, b: LatLng): number {
   const φ2 = (b.latitude * Math.PI) / 180;
   const Δφ = ((b.latitude - a.latitude) * Math.PI) / 180;
   const Δλ = ((b.longitude - a.longitude) * Math.PI) / 180;
-  return 2 * R * Math.asin(Math.sqrt(
-    Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2
-  ));
+  return (
+    2 *
+    R *
+    Math.asin(
+      Math.sqrt(
+        Math.sin(Δφ / 2) ** 2 +
+          Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2,
+      ),
+    )
+  );
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function PickupMapTab() {
-  const { orderNumber } = useLocalSearchParams<{ orderNumber?: string | string[] }>();
-  const requestedOrder = Array.isArray(orderNumber) ? orderNumber[0] : orderNumber;
+  const { orderNumber } = useLocalSearchParams<{
+    orderNumber?: string | string[];
+  }>();
+  const requestedOrder = Array.isArray(orderNumber)
+    ? orderNumber[0]
+    : orderNumber;
   const insets = useSafeAreaInsets();
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [orders, setOrders] = useState<RiderAssignedOrderSummary[]>([]);
-  const [selectedOrderNumber, setSelectedOrderNumber] = useState<string | null>(null);
-  const [orderDetail, setOrderDetail] = useState<RiderAssignedOrderDetail | null>(null);
+  const [selectedOrderNumber, setSelectedOrderNumber] = useState<string | null>(
+    null,
+  );
+  const [orderDetail, setOrderDetail] =
+    useState<RiderAssignedOrderDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(false);
   const [riderLocation, setRiderLocation] = useState<LatLng | null>(null);
@@ -153,8 +169,16 @@ export default function PickupMapTab() {
   useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.8, duration: 900, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 900, useNativeDriver: true }),
+        Animated.timing(pulseAnim, {
+          toValue: 1.8,
+          duration: 900,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 900,
+          useNativeDriver: true,
+        }),
       ]),
     );
     loop.start();
@@ -163,30 +187,42 @@ export default function PickupMapTab() {
 
   // ── Derived values ─────────────────────────────────────────────────────────
   const pickupLocation = useMemo(
-    () => parseCoord(orderDetail?.sender_latitude ?? null, orderDetail?.sender_longitude ?? null),
+    () =>
+      parseCoord(
+        orderDetail?.sender_latitude ?? null,
+        orderDetail?.sender_longitude ?? null,
+      ),
     [orderDetail],
   );
 
   const deliveryLocation = useMemo(
-    () => parseCoord(orderDetail?.receiver_latitude ?? null, orderDetail?.receiver_longitude ?? null),
+    () =>
+      parseCoord(
+        orderDetail?.receiver_latitude ?? null,
+        orderDetail?.receiver_longitude ?? null,
+      ),
     [orderDetail],
   );
 
   /**
    * Phase-aware:
-   *  pickup_assigned → navigate to PICKUP
-   *  picked_up / in_transit / out_for_delivery → navigate to DELIVERY
+   *  heading_to_pickup → navigate to PICKUP
+   *  out_for_delivery → navigate to DELIVERY
    */
   const isDeliveryPhase = orderDetail
     ? DELIVERY_PHASE_STATUSES.includes(orderDetail.order_status)
     : false;
 
-  const navigationTarget = isDeliveryPhase ? deliveryLocation : pickupLocation;
-  const directionDestination = navigationTarget;
-
   const isTracking = orderDetail
     ? ACTIVE_STATUSES.includes(orderDetail.order_status)
     : false;
+
+  const navigationTarget = isTracking
+    ? isDeliveryPhase
+      ? deliveryLocation
+      : pickupLocation
+    : null;
+  const directionDestination = navigationTarget;
 
   const selectedOrder = useMemo(
     () => orders.find((o) => o.order_number === selectedOrderNumber) ?? null,
@@ -209,19 +245,30 @@ export default function PickupMapTab() {
 
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
-        Alert.alert("Permission required", "Location permission is needed for live tracking.");
+        Alert.alert(
+          "Permission required",
+          "Location permission is needed for live tracking.",
+        );
         return;
       }
 
       const socket = riderService.createOrderLocationSocket(orderNum, token);
       socketRef.current = socket;
 
-      const buildPayload = (c: Location.LocationObjectCoords): RiderLocationUpdatePayload => ({
+      const buildPayload = (
+        c: Location.LocationObjectCoords,
+      ): RiderLocationUpdatePayload => ({
         latitude: c.latitude,
         longitude: c.longitude,
         accuracy_meters: c.accuracy ?? undefined,
-        speed_kmh: typeof c.speed === "number" && c.speed >= 0 ? c.speed * 3.6 : undefined,
-        heading_degrees: typeof c.heading === "number" && c.heading >= 0 ? c.heading : undefined,
+        speed_kmh:
+          typeof c.speed === "number" && c.speed >= 0
+            ? c.speed * 3.6
+            : undefined,
+        heading_degrees:
+          typeof c.heading === "number" && c.heading >= 0
+            ? c.heading
+            : undefined,
       });
 
       const send = async (p: RiderLocationUpdatePayload) => {
@@ -232,23 +279,36 @@ export default function PickupMapTab() {
         }
       };
 
-      const init = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      const init = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+      });
       const initP = buildPayload(init.coords);
-      setRiderLocation({ latitude: initP.latitude, longitude: initP.longitude });
+      setRiderLocation({
+        latitude: initP.latitude,
+        longitude: initP.longitude,
+      });
       await send(initP);
 
       socket.onmessage = (event) => {
         try {
           const msg: SocketMessage = JSON.parse(event.data);
           if (msg.type === "location.update" && msg.latitude && msg.longitude) {
-            const la = Number(msg.latitude), lo = Number(msg.longitude);
-            if (!Number.isNaN(la) && !Number.isNaN(lo)) setRiderLocation({ latitude: la, longitude: lo });
+            const la = Number(msg.latitude),
+              lo = Number(msg.longitude);
+            if (!Number.isNaN(la) && !Number.isNaN(lo))
+              setRiderLocation({ latitude: la, longitude: lo });
           }
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       };
 
       locationWatchRef.current = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.High, distanceInterval: 10, timeInterval: 5000 },
+        {
+          accuracy: Location.Accuracy.High,
+          distanceInterval: 10,
+          timeInterval: 5000,
+        },
         async (pos) => {
           const p = buildPayload(pos.coords);
           setRiderLocation({ latitude: p.latitude, longitude: p.longitude });
@@ -260,28 +320,36 @@ export default function PickupMapTab() {
   );
 
   // ── Directions ─────────────────────────────────────────────────────────────
-  const fetchDirections = useCallback(async (origin: LatLng, destination: LatLng) => {
-    try {
-      const data = await riderService.getPickupRouteDirections(origin, destination);
-      if (data.status === "OK" && data.routes?.length) {
-        setRoutePoints(decodePolyline(data.routes[0].overview_polyline?.points ?? ""));
-        const leg = data.routes[0].legs?.[0];
-        setRouteSummary(
-          leg?.distance?.text && leg?.duration?.text
-            ? `${leg.distance.text} · ${leg.duration.text}`
-            : "",
+  const fetchDirections = useCallback(
+    async (origin: LatLng, destination: LatLng) => {
+      try {
+        const data = await riderService.getPickupRouteDirections(
+          origin,
+          destination,
         );
-      } else {
+        if (data.status === "OK" && data.routes?.length) {
+          setRoutePoints(
+            decodePolyline(data.routes[0].overview_polyline?.points ?? ""),
+          );
+          const leg = data.routes[0].legs?.[0];
+          setRouteSummary(
+            leg?.distance?.text && leg?.duration?.text
+              ? `${leg.distance.text} · ${leg.duration.text}`
+              : "",
+          );
+        } else {
+          setRoutePoints([origin, destination]);
+          setRouteSummary("");
+        }
+      } catch {
         setRoutePoints([origin, destination]);
         setRouteSummary("");
       }
-    } catch {
-      setRoutePoints([origin, destination]);
-      setRouteSummary("");
-    }
-    lastDirectionOriginRef.current = origin;
-    lastDirectionDestRef.current = `${destination.latitude},${destination.longitude}`;
-  }, []);
+      lastDirectionOriginRef.current = origin;
+      lastDirectionDestRef.current = `${destination.latitude},${destination.longitude}`;
+    },
+    [],
+  );
 
   // ── Data loading ───────────────────────────────────────────────────────────
   const loadOrders = useCallback(async () => {
@@ -311,7 +379,9 @@ export default function PickupMapTab() {
       await loadOrders();
       setIsLoading(false);
     })();
-    return () => { stopRealtimeTracking(); };
+    return () => {
+      stopRealtimeTracking();
+    };
   }, [loadOrders, stopRealtimeTracking]);
 
   // Auto-refresh
@@ -330,7 +400,10 @@ export default function PickupMapTab() {
 
   // Load detail when selection changes
   useEffect(() => {
-    if (!selectedOrderNumber) { setOrderDetail(null); return; }
+    if (!selectedOrderNumber) {
+      setOrderDetail(null);
+      return;
+    }
     loadOrderDetail(selectedOrderNumber);
   }, [loadOrderDetail, selectedOrderNumber]);
 
@@ -368,12 +441,22 @@ export default function PickupMapTab() {
       return;
     }
 
-    const origin = riderLocation ?? directionDestination;
+    // Guard: if riderLocation is (0,0) it means GPS hasn't fixed yet — don't
+    // use it as the route origin or Google Maps will route from Africa.
+    const isValidRiderLocation =
+      riderLocation !== null &&
+      !(riderLocation.latitude === 0 && riderLocation.longitude === 0);
+
+    const origin = isValidRiderLocation ? riderLocation! : directionDestination;
     const last = lastDirectionOriginRef.current;
     const destKey = `${directionDestination.latitude},${directionDestination.longitude}`;
     const destChanged = destKey !== lastDirectionDestRef.current;
 
-    if (!last || destChanged || haversineM(last, origin) > ROUTE_REFETCH_THRESHOLD_M) {
+    if (
+      !last ||
+      destChanged ||
+      haversineM(last, origin) > ROUTE_REFETCH_THRESHOLD_M
+    ) {
       fetchDirections(origin, directionDestination);
     }
   }, [directionDestination, riderLocation, fetchDirections]);
@@ -388,16 +471,73 @@ export default function PickupMapTab() {
   }, [routePoints]);
 
   // ── Actions ────────────────────────────────────────────────────────────────
+  const handleHeadingToPickup = async () => {
+    if (!selectedOrderNumber || !orderDetail) return;
+    const res = await riderService.updateAssignedOrderStatus(
+      selectedOrderNumber,
+      {
+        status: "heading_to_pickup",
+        remarks: "Rider is on the way to pick up your parcel.",
+        location_city: orderDetail.sender_city,
+      },
+    );
+    if (res.IsSuccess) {
+      await loadOrderDetail(selectedOrderNumber);
+      Alert.alert("Updated", "Status updated: heading to pickup.");
+    } else {
+      Alert.alert("Update failed", "Could not update order status.");
+    }
+  };
+
   const handleMarkPickedUp = async () => {
     if (!selectedOrderNumber || !orderDetail) return;
-    const res = await riderService.updateAssignedOrderStatus(selectedOrderNumber, {
-      status: "picked_up",
-      remarks: "Rider collected package from pickup point.",
-      location_city: orderDetail.sender_city,
-    });
+    const res = await riderService.updateAssignedOrderStatus(
+      selectedOrderNumber,
+      {
+        status: "picked_up",
+        remarks: "Rider picked up the parcel from sender.",
+        location_city: orderDetail.sender_city,
+      },
+    );
     if (res.IsSuccess) {
       await loadOrderDetail(selectedOrderNumber);
       Alert.alert("Updated", "Order marked as picked up.");
+    } else {
+      Alert.alert("Update failed", "Could not update order status.");
+    }
+  };
+
+  const handleStartDelivery = async () => {
+    if (!selectedOrderNumber || !orderDetail) return;
+    const res = await riderService.updateAssignedOrderStatus(
+      selectedOrderNumber,
+      {
+        status: "out_for_delivery",
+        remarks: "Rider is out for delivery with the parcel.",
+        location_city: orderDetail.receiver_city,
+      },
+    );
+    if (res.IsSuccess) {
+      await loadOrderDetail(selectedOrderNumber);
+      Alert.alert("Updated", "Order is now out for delivery.");
+    } else {
+      Alert.alert("Update failed", "Could not update order status.");
+    }
+  };
+
+  const handleMarkDelivered = async () => {
+    if (!selectedOrderNumber || !orderDetail) return;
+    const res = await riderService.updateAssignedOrderStatus(
+      selectedOrderNumber,
+      {
+        status: "delivered",
+        remarks: "Rider successfully delivered the parcel.",
+        location_city: orderDetail.receiver_city,
+      },
+    );
+    if (res.IsSuccess) {
+      await loadOrderDetail(selectedOrderNumber);
+      Alert.alert("Updated", "Order marked as delivered.");
     } else {
       Alert.alert("Update failed", "Could not update order status.");
     }
@@ -413,9 +553,13 @@ export default function PickupMapTab() {
     const iosUrl = `comgooglemaps://?daddr=${latitude},${longitude}&directionsmode=driving`;
     const webUrl = `https://maps.google.com/maps?daddr=${latitude},${longitude}`;
     if (Platform.OS === "android") {
-      Linking.canOpenURL(androidUrl).then((can) => Linking.openURL(can ? androidUrl : webUrl));
+      Linking.canOpenURL(androidUrl).then((can) =>
+        Linking.openURL(can ? androidUrl : webUrl),
+      );
     } else {
-      Linking.canOpenURL(iosUrl).then((can) => Linking.openURL(can ? iosUrl : webUrl));
+      Linking.canOpenURL(iosUrl).then((can) =>
+        Linking.openURL(can ? iosUrl : webUrl),
+      );
     }
   };
 
@@ -431,7 +575,12 @@ export default function PickupMapTab() {
     const anchor = riderLocation ?? navigationTarget;
     if (!anchor) return;
     mapRef.current.animateToRegion(
-      { latitude: anchor.latitude, longitude: anchor.longitude, latitudeDelta: 0.035, longitudeDelta: 0.035 },
+      {
+        latitude: anchor.latitude,
+        longitude: anchor.longitude,
+        latitudeDelta: 0.035,
+        longitudeDelta: 0.035,
+      },
       400,
     );
   };
@@ -448,7 +597,12 @@ export default function PickupMapTab() {
   }
 
   const mapInitialRegion = pickupLocation
-    ? { latitude: pickupLocation.latitude, longitude: pickupLocation.longitude, latitudeDelta: 0.08, longitudeDelta: 0.08 }
+    ? {
+        latitude: pickupLocation.latitude,
+        longitude: pickupLocation.longitude,
+        latitudeDelta: 0.08,
+        longitudeDelta: 0.08,
+      }
     : undefined;
 
   return (
@@ -512,23 +666,38 @@ export default function PickupMapTab() {
                 <Animated.View
                   style={[
                     styles.liveDotPulse,
-                    { transform: [{ scale: pulseAnim }], opacity: isTracking ? 0.35 : 0 },
+                    {
+                      transform: [{ scale: pulseAnim }],
+                      opacity: isTracking ? 0.35 : 0,
+                    },
                   ]}
                 />
                 <View
                   style={[
                     styles.liveDot,
-                    { backgroundColor: isTracking ? Colors.success : Colors.mutedForeground },
+                    {
+                      backgroundColor: isTracking
+                        ? Colors.success
+                        : Colors.mutedForeground,
+                    },
                   ]}
                 />
               </View>
               <Text style={styles.liveLabel}>
                 {isTracking
-                  ? (isDeliveryPhase ? "Head to Delivery" : "Head to Pickup")
+                  ? isDeliveryPhase
+                    ? "Delivering"
+                    : orderDetail?.order_status === "heading_to_pickup"
+                      ? "On My Way \ud83d\udef5"
+                      : "Head to Pickup"
                   : "Standby"}
               </Text>
               {isAutoRefreshing && (
-                <ActivityIndicator size="small" color={Colors.primary} style={{ marginLeft: 4 }} />
+                <ActivityIndicator
+                  size="small"
+                  color={Colors.primary}
+                  style={{ marginLeft: 4 }}
+                />
               )}
             </View>
             <Text style={styles.orderCountText}>
@@ -549,7 +718,12 @@ export default function PickupMapTab() {
                       onPress={() => setSelectedOrderNumber(o.order_number)}
                       activeOpacity={0.75}
                     >
-                      <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                      <Text
+                        style={[
+                          styles.chipText,
+                          active && styles.chipTextActive,
+                        ]}
+                      >
                         {o.order_number}
                       </Text>
                     </TouchableOpacity>
@@ -564,7 +738,10 @@ export default function PickupMapTab() {
           {/* Destination address */}
           {orderDetail && (
             <Text style={styles.destText} numberOfLines={1}>
-              📍 {isDeliveryPhase ? orderDetail.receiver_address : orderDetail.sender_address}
+              📍{" "}
+              {isDeliveryPhase
+                ? orderDetail.receiver_address
+                : orderDetail.sender_address}
             </Text>
           )}
         </View>
@@ -574,7 +751,9 @@ export default function PickupMapTab() {
       <View style={[styles.mapControls, { top: insets.top + 170 }]}>
         <Pressable
           style={styles.controlBtn}
-          onPress={() => setMapType((p) => p === "standard" ? "satellite" : "standard")}
+          onPress={() =>
+            setMapType((p) => (p === "standard" ? "satellite" : "standard"))
+          }
         >
           <Layers3 size={20} color={Colors.primary} strokeWidth={2.2} />
         </Pressable>
@@ -586,13 +765,19 @@ export default function PickupMapTab() {
             style={[styles.controlBtn, styles.controlBtnNav]}
             onPress={handleNavigate}
           >
-            <Navigation size={20} color={Colors.primaryForeground} strokeWidth={2.2} />
+            <Navigation
+              size={20}
+              color={Colors.primaryForeground}
+              strokeWidth={2.2}
+            />
           </Pressable>
         )}
       </View>
 
       {/* ── Bottom floating sheet ── */}
-      <View style={[styles.bottomSheet, { bottom: insets.bottom + Spacing.sm }]}>
+      <View
+        style={[styles.bottomSheet, { bottom: insets.bottom + Spacing.sm }]}
+      >
         {/* Collapse handle */}
         <TouchableOpacity
           style={styles.collapseHandle}
@@ -600,19 +785,27 @@ export default function PickupMapTab() {
           activeOpacity={0.7}
         >
           <View style={styles.handleBar} />
-          {bottomExpanded
-            ? <ChevronDown size={14} color={Colors.mutedForeground} />
-            : <ChevronUp size={14} color={Colors.mutedForeground} />}
+          {bottomExpanded ? (
+            <ChevronDown size={14} color={Colors.mutedForeground} />
+          ) : (
+            <ChevronUp size={14} color={Colors.mutedForeground} />
+          )}
         </TouchableOpacity>
 
         {/* Route summary — always visible */}
         <View style={styles.routeRow}>
-          <View style={[styles.navIconWrap, isDeliveryPhase && styles.navIconWrapDelivery]}>
+          <View
+            style={[
+              styles.navIconWrap,
+              isDeliveryPhase && styles.navIconWrapDelivery,
+            ]}
+          >
             <Navigation size={18} color={Colors.primaryForeground} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.routeTitle}>
-              {routeSummary || (isDeliveryPhase ? "Route to delivery" : "Route to pickup")}
+              {routeSummary ||
+                (isDeliveryPhase ? "Route to delivery" : "Route to pickup")}
             </Text>
             {orderDetail && (
               <Text style={styles.routeSub} numberOfLines={1}>
@@ -641,7 +834,19 @@ export default function PickupMapTab() {
             </View>
 
             {orderDetail.order_status === "pickup_assigned" && (
+              <Button
+                title="I'm On My Way 🛵"
+                onPress={handleHeadingToPickup}
+              />
+            )}
+            {orderDetail.order_status === "heading_to_pickup" && (
               <Button title="Mark as Picked Up" onPress={handleMarkPickedUp} />
+            )}
+            {orderDetail.order_status === "delivery_assigned" && (
+              <Button title="Start Delivery" onPress={handleStartDelivery} />
+            )}
+            {orderDetail.order_status === "out_for_delivery" && (
+              <Button title="Mark as Delivered" onPress={handleMarkDelivered} />
             )}
           </View>
         )}
@@ -656,86 +861,199 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.muted },
 
   center: {
-    flex: 1, alignItems: "center", justifyContent: "center",
-    backgroundColor: Colors.background, gap: Spacing.sm,
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: Colors.background,
+    gap: Spacing.sm,
   },
-  loadingText: { color: Colors.textSecondary, fontSize: FontSizes.md, marginTop: Spacing.xs },
+  loadingText: {
+    color: Colors.textSecondary,
+    fontSize: FontSizes.md,
+    marginTop: Spacing.xs,
+  },
 
   mapPlaceholder: {
-    ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center",
-    backgroundColor: Colors.muted, gap: Spacing.sm, paddingHorizontal: Spacing.xl,
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: Colors.muted,
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.xl,
   },
-  placeholderTitle: { color: Colors.text, fontSize: FontSizes.lg, fontWeight: "700" },
-  placeholderSub: { color: Colors.textSecondary, fontSize: FontSizes.sm, textAlign: "center" },
+  placeholderTitle: {
+    color: Colors.text,
+    fontSize: FontSizes.lg,
+    fontWeight: "700",
+  },
+  placeholderSub: {
+    color: Colors.textSecondary,
+    fontSize: FontSizes.sm,
+    textAlign: "center",
+  },
 
   // Top overlay
   topOverlay: { position: "absolute", left: Spacing.md, right: Spacing.md },
   topCard: {
     backgroundColor: CARD_BG,
-    borderRadius: BorderRadius.xl, borderWidth: 1, borderColor: Colors.border,
-    padding: Spacing.sm, gap: Spacing.xs, ...Shadows.md,
+    borderRadius: BorderRadius.xl,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: Spacing.sm,
+    gap: Spacing.xs,
+    ...Shadows.md,
   },
   topCardHeader: {
-    flexDirection: "row", justifyContent: "space-between",
-    alignItems: "center", paddingHorizontal: Spacing.xs,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: Spacing.xs,
   },
   liveRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  liveDotContainer: { width: 16, height: 16, alignItems: "center", justifyContent: "center" },
-  liveDotPulse: { position: "absolute", width: 16, height: 16, borderRadius: 8, backgroundColor: Colors.success },
+  liveDotContainer: {
+    width: 16,
+    height: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  liveDotPulse: {
+    position: "absolute",
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: Colors.success,
+  },
   liveDot: { width: 9, height: 9, borderRadius: 5 },
   liveLabel: { color: Colors.text, fontSize: FontSizes.xs, fontWeight: "700" },
-  orderCountText: { color: Colors.textSecondary, fontSize: FontSizes.xs, fontWeight: "600" },
-  chipRow: { flexDirection: "row", gap: Spacing.xs, paddingHorizontal: Spacing.xs, paddingVertical: 2 },
+  orderCountText: {
+    color: Colors.textSecondary,
+    fontSize: FontSizes.xs,
+    fontWeight: "600",
+  },
+  chipRow: {
+    flexDirection: "row",
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.xs,
+    paddingVertical: 2,
+  },
   chip: {
-    borderWidth: 1, borderColor: Colors.border, borderRadius: BorderRadius.full,
-    paddingHorizontal: Spacing.sm, paddingVertical: 5, backgroundColor: Colors.secondary,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 5,
+    backgroundColor: Colors.secondary,
   },
   chipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  chipText: { color: Colors.primary, fontSize: FontSizes.xs, fontWeight: "700" },
+  chipText: {
+    color: Colors.primary,
+    fontSize: FontSizes.xs,
+    fontWeight: "700",
+  },
   chipTextActive: { color: Colors.primaryForeground },
-  noOrderText: { color: Colors.textSecondary, fontSize: FontSizes.sm, textAlign: "center", paddingVertical: Spacing.xs },
-  destText: { color: Colors.mutedForeground, fontSize: FontSizes.xs, paddingHorizontal: Spacing.xs },
+  noOrderText: {
+    color: Colors.textSecondary,
+    fontSize: FontSizes.sm,
+    textAlign: "center",
+    paddingVertical: Spacing.xs,
+  },
+  destText: {
+    color: Colors.mutedForeground,
+    fontSize: FontSizes.xs,
+    paddingHorizontal: Spacing.xs,
+  },
 
   // Custom markers
   markerPickup: {
-    width: 32, height: 32, borderRadius: 16,
-    backgroundColor: Colors.primary, alignItems: "center", justifyContent: "center",
-    borderWidth: 2, borderColor: Colors.primaryForeground, ...Shadows.sm,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: Colors.primaryForeground,
+    ...Shadows.sm,
   },
   markerDelivery: {
-    width: 32, height: 32, borderRadius: 16,
-    backgroundColor: Colors.success, alignItems: "center", justifyContent: "center",
-    borderWidth: 2, borderColor: Colors.primaryForeground, ...Shadows.sm,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Colors.success,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: Colors.primaryForeground,
+    ...Shadows.sm,
   },
 
   // Map controls
   mapControls: { position: "absolute", right: Spacing.md, gap: Spacing.sm },
   controlBtn: {
-    width: 44, height: 44, borderRadius: 22, backgroundColor: CARD_BG,
-    alignItems: "center", justifyContent: "center",
-    borderWidth: 1, borderColor: Colors.border, ...Shadows.md,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: CARD_BG,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: Colors.border,
+    ...Shadows.md,
   },
-  controlBtnNav: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  controlBtnNav: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
 
   // Bottom sheet
   bottomSheet: {
-    position: "absolute", left: Spacing.md, right: Spacing.md,
-    backgroundColor: CARD_BG, borderRadius: BorderRadius["2xl"],
-    borderWidth: 1, borderColor: Colors.border,
-    padding: Spacing.md, gap: Spacing.sm, ...Shadows.lg,
+    position: "absolute",
+    left: Spacing.md,
+    right: Spacing.md,
+    backgroundColor: CARD_BG,
+    borderRadius: BorderRadius["2xl"],
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: Spacing.md,
+    gap: Spacing.sm,
+    ...Shadows.lg,
   },
   collapseHandle: { alignItems: "center", gap: 2, paddingBottom: 2 },
-  handleBar: { width: 36, height: 4, backgroundColor: Colors.border, borderRadius: 2 },
+  handleBar: {
+    width: 36,
+    height: 4,
+    backgroundColor: Colors.border,
+    borderRadius: 2,
+  },
   routeRow: { flexDirection: "row", alignItems: "center", gap: Spacing.sm },
   navIconWrap: {
-    width: 38, height: 38, borderRadius: 19,
-    backgroundColor: Colors.primary, alignItems: "center", justifyContent: "center", flexShrink: 0,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: Colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
   },
   navIconWrapDelivery: { backgroundColor: Colors.success },
   routeTitle: { color: Colors.text, fontSize: FontSizes.sm, fontWeight: "700" },
-  routeSub: { color: Colors.textSecondary, fontSize: FontSizes.xs, marginTop: 2 },
-  expandedSection: { gap: Spacing.sm, paddingTop: Spacing.xs, borderTopWidth: 1, borderTopColor: Colors.border },
+  routeSub: {
+    color: Colors.textSecondary,
+    fontSize: FontSizes.xs,
+    marginTop: 2,
+  },
+  expandedSection: {
+    gap: Spacing.sm,
+    paddingTop: Spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
   infoRow: { flexDirection: "row", alignItems: "center", gap: Spacing.sm },
-  infoText: { flex: 1, color: Colors.text, fontSize: FontSizes.sm, fontWeight: "700" },
+  infoText: {
+    flex: 1,
+    color: Colors.text,
+    fontSize: FontSizes.sm,
+    fontWeight: "700",
+  },
   infoSub: { color: Colors.mutedForeground, fontSize: FontSizes.xs },
 });

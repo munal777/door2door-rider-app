@@ -10,6 +10,10 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.munalpoudel.riderapp",
+      infoPlist: {
+        NSCameraUsageDescription:
+          "Allow access to the camera to capture proof of delivery.",
+      },
       config: {
         googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY,
       },
@@ -26,11 +30,12 @@ export default {
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false,
       package: "com.munalpoudel.riderapp",
+      permissions: ["android.permission.CAMERA"],
     },
     web: {
       output: "static",
     },
-    plugins: ["expo-router"],
+    plugins: ["expo-router", "expo-camera"],
     experiments: {
       typedRoutes: true,
       reactCompiler: true,

@@ -25,9 +25,14 @@ class ApiClient {
           config.headers.Authorization = `Bearer ${this.accessToken}`;
         }
         
+        const isFormData =
+          config.data instanceof FormData ||
+          Boolean(config.data && (config.data as any)._parts);
+
         // For FormData, remove Content-Type to let axios set it with boundary
-        if (config.data instanceof FormData) {
+        if (isFormData) {
           delete config.headers['Content-Type'];
+          config.headers.Accept = 'application/json';
         }
         
         return config;

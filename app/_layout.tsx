@@ -81,10 +81,9 @@ function RootLayoutNav() {
         }}
       />
       <Stack.Screen
-        name="order/[orderNumber]"
+        name="order"
         options={{
           headerShown: false,
-          animation: "slide_from_right",
         }}
       />
     </Stack>
