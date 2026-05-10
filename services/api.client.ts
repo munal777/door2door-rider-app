@@ -8,8 +8,6 @@ class ApiClient {
 
   constructor() {
     // Log the active base URL on startup — useful for catching wrong IP issues
-    console.log('[ApiClient] BASE_URL:', API_CONFIG.BASE_URL);
-
     this.axiosInstance = axios.create({
       baseURL: API_CONFIG.BASE_URL,
       timeout: 30000,
