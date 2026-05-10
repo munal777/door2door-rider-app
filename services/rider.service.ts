@@ -249,8 +249,6 @@ export const riderService = {
       headers['Authorization'] = `Bearer ${token}`;
     }
 
-    console.log('[POD Upload] POST', url);
-
     let response: Response;
     try {
       response = await fetch(url, {
@@ -280,7 +278,6 @@ export const riderService = {
       };
     }
 
-    console.log('[POD Upload] Response status:', response.status, 'IsSuccess:', data?.IsSuccess);
     return data;
   },
 };
